@@ -1,11 +1,28 @@
 name: LinkedIn Scheduler
 
 on:
+  schedule:
+    - cron: "30 13 * * *"
+
   workflow_dispatch:
 
 jobs:
-  placeholder:
+  post:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Placeholder workflow
-        run: echo "LinkedIn scheduler workflow scaffolded"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish LinkedIn post
+        env:
+          LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
+        run: node post.js
