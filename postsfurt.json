@@ -1,0 +1,287 @@
+[
+  {
+    "id": 1,
+    "date": "2026-08-12",
+    "text": "I built a centralized crypto exchange — matching engine, real-time order book, the works. It's the project I'd point to first if someone asked what I've actually built.\n\nIt took close to a year. Not a year of steady work — a year of starting, getting somewhere, deciding it was done, walking away, and then coming back a month later because something about it was still unfinished in my head. It started rough. I didn't fully understand what a matching engine needed to guarantee when I began — price-time priority, deterministic ordering, what happens when two orders land at nearly the same instant. I learned most of what I actually know about backend web development from this one project, piece by piece, mistake by mistake.\n\nThere's an odd side effect of that: by the time I understood enough to build the early parts properly, I'd half-forgotten the reasoning I used when I first wrote them. Learning isn't a straight line. Some of what I know now made older parts of my own code look naive in hindsight — and I think that's a normal, healthy sign of actually getting better, not something to hide.\n\nThis isn't a polished \"I shipped a project\" story. It's closer to the real one — long, uneven, occasionally frustrating, and the thing I learned the most from this year.\n\n``",
+    "images": [
+      "images/POST_01_EXCHANGE_UI.png",
+      "images/POST_01_EXCHANGE_ARCHITECTURE.png"
+    ]
+  },
+  {
+    "id": 2,
+    "date": "2026-08-14",
+    "text": "There was a stretch, maybe two months in, where I genuinely believed I could design a frontend that matched what I was seeing on Binance or Backpack Exchange — clean, dense, information-first, built for someone making fast decisions.\n\nI sat down on my own laptop, rusty at frontend work, and tried to remake that. It didn't go how I imagined. Those interfaces are built by teams of designers and engineers with years of experience on real trading products, with actual UX research behind every pixel of density and spacing. I was one person, learning as I went, trying to close a gap that took other people entire careers to close.\n\nI don't regret trying. What I built is meaningfully better than where I started, and I'm genuinely proud of parts of it. But I want to be honest instead of polished here: it's not there yet. It still needs real improvement, and I know exactly which parts. I'd rather say that plainly than let a nice screenshot imply something the codebase doesn't back up.\n\nDreaming big and being honest about the distance between the dream and the current version aren't in conflict. I think that tension is actually the healthy version of ambition.",
+    "images": [
+      "images/POST_02_EXCHANGE_UI_COMPARISON.png"
+    ]
+  },
+  {
+    "id": 3,
+    "date": "2026-08-16",
+    "text": "The biggest thing this project taught me wasn't a specific pattern or framework. It was patience with something that refuses to feel finished.\n\nI don't think I have that instinct naturally — my default is to call something done and move to the next idea. This project didn't let me get away with that. Every time I thought I'd wrapped it up, I'd find something: a race condition I hadn't considered, a precision bug in how I was handling quantities, a UI decision I'd made without understanding the tradeoff underneath it. Each one pulled me back in for another round.\n\nAlmost a year of that cycle taught me more about actually finishing hard things than any single course or tutorial could have. It's easy to start projects. This one taught me what it costs to actually see one through, on and off, for a long time, without giving up on it entirely.\n\n---"
+  },
+  {
+    "id": 4,
+    "date": "2026-08-19",
+    "text": "Before I started building this, I assumed an exchange was mostly a database with buy and sell rows and some matching logic on top. It isn't. It's a system where a single bug can move real money, at speed, before any human has a chance to notice.\n\nThe example that reframed this for me completely: Knight Capital, a market-making firm on Wall Street, deployed a software update in August 2012 that contained a dormant bug. That bug got accidentally triggered during deployment, and for 45 minutes, Knight's systems executed a flood of unintended trades. By the time anyone flipped the kill switch, the company had lost $440 million — nearly four times its annual profit — and came within days of bankruptcy. This wasn't a hack. Nobody stole anything. It was a deployment mistake in ordinary software.\n\nThat's the actual scale of \"cost of a mistake\" in this domain, and it completely changed how seriously I take testing, staged rollouts, and having an actual kill switch — not as best practices I read about, but as the literal thing standing between a bug and a company-ending headline.\n\nFurther reading on the Knight Capital incident: https\\://www\\.cio.com/article/286790/software-testing-lessons-learned-from-knight-capital-fiasco.html\n\n``",
+    "images": [
+      "images/POST_04_KNIGHT_CAPITAL_DIAGRAM.png"
+    ]
+  },
+  {
+    "id": 5,
+    "date": "2026-08-21",
+    "text": "The scale problem in building an exchange isn't just \"handle many users.\" It's \"many users all need the same order book to be correct, at the exact same instant, under load that can spike without warning\" — a news event, a price crash, a wave of liquidations all hitting at once.\n\nCompare that to a typical web app. A social feed can tolerate a like-count that's a second stale — nobody notices, nobody's harmed. An exchange cannot tolerate a stale price for even a few milliseconds without someone making a decision on wrong information, potentially losing real money because your system told them something that was no longer true.\n\nThat difference — how much staleness a system can tolerate — turned out to be the real dividing line for me between \"build a web app\" and \"build a financial system.\" Once I understood that as the actual constraint, it reshaped almost every decision that came after it: how I propagate state, how I structure my WebSocket broadcasts, even how I think about caching.",
+    "images": [
+      "images/POST_05_STALENESS_DIAGRAM.png"
+    ]
+  },
+  {
+    "id": 6,
+    "date": "2026-08-23",
+    "text": "Every real architectural decision in this project came down to the same repeated question: what am I compromising on here, and is it the right thing to compromise on?\n\nEarly on, I chose Redis pub/sub over a heavier message broker for real-time state propagation. Not because it was theoretically the best choice in the abstract — because at my actual scale, the added operational complexity of something heavier would have cost me more in new bugs than it would have gained me in correctness guarantees I didn't need yet. That's the real lesson this project taught me about architecture: it's rarely about finding the objectively \"best\" tool. It's about picking a tradeoff you can actually explain and defend for the scale you're really operating at, not the scale you imagine you might reach someday.\n\n``\n\n---",
+    "images": [
+      "images/POST_06_REDIS_VS_KAFKA.png"
+    ]
+  },
+  {
+    "id": 7,
+    "date": "2026-08-26",
+    "text": "Storing every single price tick and then computing candlestick charts (open, high, low, close — the standard way traders visualize price movement) on the fly from raw ticks doesn't scale. Every time someone opens a chart, you'd be scanning millions of raw rows just to draw one line.\n\nI used TimescaleDB's continuous aggregates to solve this — materialized views that incrementally update as new data arrives instead of recomputing everything from scratch on every query. The part that actually impressed me: you can build a 1-hour candle view by rolling up already-computed 1-minute aggregates, instead of touching raw tick data at all. It's a hierarchy — each layer built cheaply from the layer below it, so a query for a daily chart is reading from pre-aggregated data, not scanning a year of raw ticks.\n\nThis alone felt like a small project of its own inside the bigger one. Time-series data modeling is genuinely its own discipline, separate from general backend CRUD work, and I don't think I appreciated that until I had to actually design around it.\n\nTimescale's own tutorial on this is the clearest reference I found while learning it: https\\://docs.timescale.com/timescaledb/latest/tutorials/financial-tick-data/financial-tick-query/",
+    "images": [
+      "images/POST_07_TIMESCALEDB_AGGREGATES.png"
+    ]
+  },
+  {
+    "id": 8,
+    "date": "2026-08-28",
+    "text": "Redis Streams vs Kafka — I want to actually walk through how I made this decision instead of just naming the tool I picked.\n\nRedis Streams: in-memory first, sub-millisecond latency, simple to run because I already had Redis in my stack for other things, but bounded by available RAM and without Kafka's native topic partitioning for ordered parallel consumption at scale. Kafka: disk-backed, built for very high throughput and long retention, genuinely excellent for cross-team fan-out at real scale — but real operational overhead to actually run and maintain, especially for one person.\n\nI went with Redis Streams. My reasoning: my actual event volume never came close to the scale Kafka exists to solve for — massive throughput, indefinite retention, many independent consumer groups across teams. I already had Redis running. Adding Kafka on top would have been complexity I couldn't justify at my scale, complexity for a future I might never actually reach. A comparison I read afterward summarized the rule of thumb well: reach for Redis Streams when you want speed and operational simplicity under moderate load, reach for Kafka once you actually hit its retention or throughput ceiling — not before you get there.\n\nA solid technical comparison if you want the deeper tradeoffs: https\\://oneuptime.com/blog/post/2026-03-31-redis-streams-vs-kafka-detailed-comparison/view"
+  },
+  {
+    "id": 9,
+    "date": "2026-08-30",
+    "text": "WebSockets get treated like \"just a way to push real-time data to the browser,\" and that description undersells how much can actually go wrong underneath that simple description.\n\nConnection state management: a client disconnects mid-session — do you replay the messages they missed, or just accept the gap and let them catch up on the next update? Backpressure: what happens when a client's connection is slower than your server's publish rate — do messages queue forever, get dropped, or does something else break? Reconnection logic: when the client reconnects, does it automatically resubscribe to the right channels, or does the frontend silently sit there showing stale data while looking completely fine?\n\nI underestimated all three of these when I started. WebSockets look like plumbing right up until your order book UI silently stops updating and nobody notices for ten minutes because nothing visibly errored. That specific bug taught me to treat the \"boring\" transport layer with the exact same rigor I was already applying to the matching engine itself — because from a user's perspective, a stale UI and a wrong matching decision look identical: the system lied to them.\n\n---",
+    "images": [
+      "images/POST_09_WEBSOCKET_FAILURE_MODES.png"
+    ]
+  },
+  {
+    "id": 10,
+    "date": "2026-09-02",
+    "text": "I used the Singleton pattern for the exchange's Redis connection manager and the in-memory matching engine instance — and I want to be specific about why, because Singleton gets a bad reputation as a \"beginner's crutch\" and I don't think that's fair when it's used for the right reason.\n\nThe reasoning: I needed exactly one in-memory order book state per process and exactly one Redis connection pool. Having two of either would have meant two sources of truth for the same data — which is precisely the consistency bug I was working hard to eliminate everywhere else in this system. Singleton, used deliberately for a genuine single-source-of-truth requirement rather than just convenience, is the correct tool for that job. The pattern isn't the problem. Using it as a lazy default without understanding why is the problem.\n\n``",
+    "images": [
+      "images/POST_10_SINGLETON_DIAGRAM.png",
+      "images/POST_10_SINGLETON_CODE.png"
+    ]
+  },
+  {
+    "id": 11,
+    "date": "2026-09-04",
+    "text": "The most boring-sounding decision in this whole project ended up mattering the most: never using floating-point numbers for money.\n\nFloating-point numbers can't represent most decimal fractions exactly in binary — the classic example is that 0.1 + 0.2 doesn't equal 0.3 in standard floating point. In a system processing thousands of real quantities and prices, that tiny drift doesn't stay tiny. It compounds across transactions into numbers that don't reconcile, and in a financial system, numbers that don't reconcile are numbers that could mean someone gets paid the wrong amount.\n\nI used BigInt arithmetic everywhere prices and quantities get computed, treating currency as integer minor units — the same idea as storing cents instead of dollars — rather than fractional floats anywhere in the pipeline. It's the single most \"completely obvious once you know it, invisible until you've been burned by it\" lesson from the entire project, and I think about it every time I see a finance-adjacent side project storing prices as plain floats.",
+    "images": [
+      "images/POST_11_BIGINT_CODE.png"
+    ]
+  },
+  {
+    "id": 12,
+    "date": "2026-09-06",
+    "text": "Security in an exchange isn't a checklist you complete once and move past. It's an ongoing question: what does someone with API access actually want from this system, and what's the easiest way they'd try to get it?\n\nThe concrete things I had to actually think through, not just read about: rate limiting so someone can't flood the order book with junk orders and degrade performance for everyone else. Strict input validation on every price and quantity field, because someone will eventually try a negative number or an absurdly large one just to see what happens. And making sure account balance mutations are fully atomic — no window, however small, where a race condition lets someone effectively spend the same balance twice by firing two requests close together.\n\nNone of these are exotic or advanced. All of them are the kind of thing that's genuinely easy to skip when you're focused on \"does the feature work in the demo\" instead of \"does the feature survive someone actively trying to break it.\"",
+    "images": [
+      "images/POST_12_SECURITY_PIPELINE.png",
+      "images/POST_12_SECURITY_CODE.png"
+    ]
+  },
+  {
+    "id": 13,
+    "date": "2026-09-09",
+    "text": "Testing a matching engine turned out to be a fundamentally different exercise than testing a typical CRUD app, and it took me a while to realize why my usual testing habits weren't catching the bugs that actually mattered here.\n\nWith a CRUD app, you're mostly checking \"does this function return the right value for this input.\" With a matching engine, the real question is \"does this system stay correct under concurrent access, does the order book state actually match between the matching engine and the broadcast layer after a hundred random operations, does price-time priority hold under load instead of just in a clean single-threaded test.\" I ended up writing property-based-style tests — firing a randomized sequence of orders at the system and asserting invariants hold afterward (total balance conserved across all accounts, no negative quantities anywhere, priority never violated) instead of only testing a handful of fixed, hand-picked scenarios.\n\nThat shift — from \"does this one example work\" to \"does this invariant always hold, no matter what sequence of events led here\" — is probably the single most transferable testing lesson I'm carrying into every project after this one.\n\n---",
+    "images": [
+      "images/POST_13_MATCHING_ENGINE_INVARIANTS.png"
+    ]
+  },
+  {
+    "id": 14,
+    "date": "2026-09-11",
+    "text": "Building Zapflow, an event-driven workflow orchestration system, taught me why \"just write to the database and then publish an event\" is quietly one of the most common traps in distributed systems.\n\nHere's the failure mode: your write to Postgres succeeds, but your publish to Kafka fails right after — or the reverse happens. Now your system is in an inconsistent state with no clean, automatic way back to consistency. The fix is called the transactional outbox pattern: you write the event into an \"outbox\" table as part of the exact same database transaction as your actual data change, so either both happen or neither does. A separate process then reads from that outbox table and publishes to Kafka on its own schedule, decoupled from the original transaction.\n\nOne transaction. No split-brain state where your database and your event stream disagree about what happened. This single pattern changed how I think about the word \"reliable\" in distributed systems — it's not a property you get by trying hard, it's a property you get by structurally removing the failure mode.\n\nThe writeup that made this pattern actually click for me, worth reading in full if you want the deeper mechanics: https\\://medium.com/design-microservices-architecture-with-patterns/outbox-pattern-for-microservices-architectures-1b8648dfaa27\n\n``",
+    "images": [
+      "images/POST_14_OUTBOX_DIAGRAM.png"
+    ]
+  },
+  {
+    "id": 15,
+    "date": "2026-09-13",
+    "text": "The brainstorming that led to idempotency in Zapflow started from a specific failure mode I hit, not from reading about best practices in the abstract.\n\nIf a Kafka consumer crashes partway through processing a message and gets automatically restarted, it might end up reprocessing a message it already partially or fully handled — which could mean firing the same webhook twice, or triggering the same side effect twice. I considered a few different approaches before landing on one. Deduplicating purely on message ID breaks down if the same logical event ever gets re-published under a new ID. A simple \"processed\" boolean flag on the record has a race window between checking the flag and setting it, where two workers could both pass the check before either sets it. What I landed on is claim/lease-based idempotency: a consumer \"claims\" a message by writing a lease with an expiry before it starts processing, and only commits once it's fully done. If a consumer crashes mid-processing, its lease simply expires, and another worker can safely pick the message back up.\n\nI want to be honest about the compromise here, not just the win: this adds real complexity. Tuning how long a lease should last, and distinguishing a consumer that's just genuinely slow from one that's actually dead, isn't trivial. Idempotency isn't free — it's a cost you pay on purpose, because the alternative, silent duplicate side effects, is worse.",
+    "images": [
+      "images/POST_15_IDEMPOTENCY_DIAGRAM.png"
+    ]
+  },
+  {
+    "id": 16,
+    "date": "2026-09-16",
+    "text": "Kafka in Zapflow has one specific job: durable, ordered event delivery between the outbox publisher and the workflow consumers, partitioned per user so that one heavy user's event volume can't starve everyone else's processing on the same partition.\n\nWhat I genuinely didn't appreciate until I was staring at consumer lag metrics: partition count is a decision you basically cannot change cheaply once you're running in production. Too few partitions and you've capped your own maximum parallelism no matter how many consumers you add. Too many and you've added coordination overhead you don't need at low volume. I ended up sizing partition count off expected concurrent users rather than picking a comfortable round number — a decision that genuinely felt like over-engineering while I was making it, and very much wasn't once real load started arriving.\n\nFurther reading if you want to go deeper on Kafka partitioning strategy: https\\://kafka.apache.org/documentation/#intro\\_concepts\\_and\\_terms\n\n``",
+    "images": [
+      "images/POST_16_KAFKA_PARTITIONS.png"
+    ]
+  },
+  {
+    "id": 17,
+    "date": "2026-09-18",
+    "text": "Webhooks are the part of Zapflow that forced me to take \"someone else's server might just not respond correctly\" seriously as an actual engineering constraint, not a rare edge case I could mostly ignore.\n\nA webhook call can time out. It can come back with a 500. Worse, it can come back with a 200 success response after your original timeout already fired on your end — which means you genuinely don't know whether the downstream system actually processed it or not. I built retry logic with exponential backoff for transient failures, and a dead-letter path for webhooks that fail repeatedly after several retries, so a flaky downstream endpoint degrades the system gracefully instead of either silently dropping events forever or retry-storming an already-struggling server with rapid repeated attempts.\n\nThe broader lesson I'm taking forward: any system that calls out to something you don't control needs an explicit story for \"what happens when it doesn't answer correctly\" — not just a happy-path story for \"what happens when it does.\"",
+    "images": [
+      "images/POST_17_WEBHOOK_RETRY_FLOW.png"
+    ]
+  },
+  {
+    "id": 18,
+    "date": "2026-09-20",
+    "text": "Zapflow needed two genuinely different authentication models, and my first instinct — trying to force one abstraction to cover both — was the wrong call, and it took building it the wrong way once to see why.\n\nHuman users need OAuth 2.0: real login, real sessions, token refresh, the works. External systems integrating with Zapflow need something stateless and simple instead — scoped API keys tied to a specific connector, not a human session at all. I ended up building dual auth rather than bending one model to awkwardly fit both use cases.\n\nThe harder part, underneath the auth logic itself, was the database schema: modeling connectors and adapters so that adding a new integration — Slack, Gmail, some custom webhook target — doesn't require touching core auth logic every single time. That meant separate tables for credentials, scopes, and connector metadata, joined cleanly instead of special-cased per integration in application code. That schema decision is really what determines whether adding integration number ten is as easy as integration number two was, or whether the whole codebase slowly calcifies under its own special cases.\n\n``",
+    "images": [
+      "images/POST_18_DUAL_AUTH.png"
+    ]
+  },
+  {
+    "id": 19,
+    "date": "2026-09-23",
+    "text": "The honest difference between building Zapflow and now maintaining it: building rewards clever abstractions. Maintaining quietly punishes them.\n\nThe hardest part to get right wasn't any single component in isolation — it was making the system scale to new connector types without every new integration requiring a change to shared core logic. What made it genuinely tough to build was designing for that extensibility upfront, without knowing the full shape of every future connector I might eventually add. What makes it tough to maintain now is a different problem entirely: monitoring which webhooks are silently failing, which consumers are lagging behind, which idempotency leases are expiring too aggressively under real load — the kind of observability debt that simply doesn't show up in week one, and only becomes visible once a system's been running for a while under real, messy, unpredictable usage."
+  },
+  {
+    "id": 20,
+    "date": "2026-09-25",
+    "text": "Deployed Zapflow properly for the first time — an AWS EC2 instance, nginx as a reverse proxy, SSL through Let's Encrypt's certbot.\n\nNone of this is exotic, and I want to be clear about that instead of dressing it up. But it was the first time I'd done a genuinely \"real\" production-style deployment instead of letting a managed platform handle it for me end to end. Configuring nginx to route requests to the right backend service. Setting up certbot to handle certificate renewal automatically, so HTTPS doesn't silently expire one day and quietly break the whole thing. Separating what's actually meant to be public-facing from what should stay internal-only. Small, unglamorous work — and exactly the kind of thing that's completely invisible when it's done correctly, and very visible, very fast, when it's skipped.\n\n``",
+    "images": [
+      "images/POST_20_DEPLOYMENT_ARCHITECTURE.png"
+    ]
+  },
+  {
+    "id": 21,
+    "date": "2026-09-27",
+    "text": "A few things about Zapflow I haven't written about yet but probably should. How I handle multi-tenancy in the schema — row-level scoping by workspace ID rather than a separate database per tenant, which is cheaper to run but genuinely harder to guarantee airtight isolation with, a tradeoff I'm honestly still not fully settled on. And how I verify webhook signatures on inbound calls, so a connector endpoint can't be spoofed by anyone who simply guesses or discovers the URL.\n\nI might turn each of these into its own full post eventually. Genuinely curious if anyone else has dealt with the multi-tenant schema tradeoff differently at real scale — that's the one I'm least confident I got right.\n\n---",
+    "images": [
+      "images/POST_21_MULTITENANCY.png"
+    ]
+  },
+  {
+    "id": 22,
+    "date": "2026-09-30",
+    "text": "A question I keep sitting with rather than answering cleanly: does using AI to write code make me a faster engineer, or a slower learner wearing a faster engineer's output?\n\nI don't think the honest answer is simply \"AI is bad\" or \"AI is good\" — both feel like they're reaching for a conclusion too fast. I think the more interesting possibility is that the skill AI removes friction from — writing syntax, boilerplate, a first draft of a function — was never actually the scarce skill to begin with. The scarce skill is knowing what to build in the first place, understanding why a particular design will fail under real load, recognizing when a shortcut is a genuine, defensible tradeoff versus just a mistake wearing a tradeoff's clothing. AI doesn't remove the need for that skill. It just makes it much easier to feel like you already have it, when what you actually have is the ability to approve someone else's reasoning quickly.\n\nI don't have a clean conclusion here. Just a question I'm trying to stay honest about answering for myself, instead of accepting whichever answer happens to be convenient in the moment."
+  },
+  {
+    "id": 23,
+    "date": "2026-10-02",
+    "text": "I caught myself reaching for an AI-generated answer to a bug I could have debugged myself in maybe ten more minutes. I noticed the reach, closed the tab, and debugged it myself instead.\n\nNot because AI assistance is inherently wrong to use — because I noticed that the reach for it was really about avoiding a small amount of discomfort, not about genuinely saving meaningful time. That's the part of this whole conversation I don't see discussed enough: the real cost of AI-assisted work isn't measured by whether the final answer is correct. It's measured by how many small, boring, actually skill-building minutes you quietly hand off without ever really noticing you're doing it.\n\nI'm trying to build a personal rule out of this, not a universal prescription for anyone else: use it to move faster on things I already genuinely understand, and resist using it to skip understanding something new for the first time."
+  },
+  {
+    "id": 24,
+    "date": "2026-10-04",
+    "text": "Something is genuinely shifting in how I think about \"learning to code\" for people entering the field around the same time I am: the scarce skill isn't writing code fluently anymore. It's forming an accurate mental model fast enough that you can actually tell when an AI's answer is subtly, quietly wrong.\n\nThat's a harder skill to build, not an easier one — because the fastest, most reliable way to build it, which is genuinely struggling through a wrong answer yourself first, is exactly the step that AI assistance makes it easiest to skip entirely. I don't have a tidy resolution to offer here either. I'm mostly just trying to notice, in the moment, when I'm skipping a struggle that would have actually taught me something real, versus skipping a struggle that was genuinely pointless friction. Those two things feel identical in the moment. They're not.\n\n---"
+  },
+  {
+    "id": 25,
+    "date": "2026-10-07",
+    "text": "Server-Sent Events, SSE, used to be the quietly forgotten option in real-time web communication. WebSockets got essentially all the attention in every course and tutorial I came across — SSE felt like a niche fallback for simple one-directional updates, barely worth a dedicated lesson.\n\nLLM streaming responses changed that almost overnight. Every \"typing\" effect you see in an AI chat interface — tokens appearing one at a time as the model generates them — is SSE running underneath, a single long-lived HTTP connection streaming data to the client as it becomes available. A technology that was genuinely a footnote in most web development curricula two or three years ago is now a load-bearing piece of infrastructure for an entire category of product shipping responses to millions of users. It's a good reminder that the \"boring, already-solved\" parts of your stack aren't actually guaranteed to stay boring forever.",
+    "images": [
+      "images/POST_25_SSE_STREAMING.png"
+    ]
+  },
+  {
+    "id": 26,
+    "date": "2026-10-09",
+    "text": "The part of the current AI wave that genuinely surprises me most isn't the models themselves — it's the compute cost quietly hiding behind the phrase \"just spin up an agent,\" which sounds free and isn't.\n\nAutonomous coding agents like Devin run each individual session inside an isolated cloud sandbox — its own shell, its own browser, its own filesystem, sometimes even dedicated GPU access — and that level of isolation is genuinely not free. Pricing models built around \"agent compute units\" exist precisely because a single agent session can consume upwards of fifteen minutes of dedicated compute just existing and reasoning, before it's even solved the actual problem it was assigned. Some sandbox infrastructure providers are now built specifically to handle tens of thousands of concurrent isolated agent sessions running in parallel across their customers.\n\nWe're quietly moving from a world where a typical web request costs a few milliseconds of shared CPU time, to one where a single agent request can cost a dedicated, isolated virtual machine running for several minutes. That's a genuinely different cost model for software than almost anything I learned building a normal web app, and I don't think most people casually building on top of these agents have fully priced in what that difference means once you're operating at real scale.\n\nMore on how this pricing actually breaks down: https\\://pensero.ai/blog/devin-pricing",
+    "images": [
+      "images/POST_26_AGENT_COMPUTE_MODEL.png"
+    ]
+  },
+  {
+    "id": 27,
+    "date": "2026-10-11",
+    "text": "Reading about agent frameworks like Mastra, and how Pi's team talks about building on top of LLMs, the thing that stands out most to me is how much of what gets called \"agent engineering\" is really just distributed systems engineering, with an LLM playing the role of one more unreliable network call in the chain.\n\nRetry logic for when a model call times out or returns something malformed. Idempotency for when a tool call might accidentally get invoked twice because of a retry. State management across a planner-executor loop, in exactly the same spirit as managing state across a set of microservices that don't fully trust each other. The vocabulary is new — agents, tools, context windows, sandboxes — but the underlying discipline underneath it is the same one I actually built while working on Zapflow: reasoning carefully about a system where any single component can fail or behave unpredictably at any moment, and designing so the system as a whole doesn't collapse when that inevitably happens.\n\n``\n\n---",
+    "images": [
+      "images/POST_27_AGENT_DISTRIBUTED_SYSTEM.png"
+    ]
+  },
+  {
+    "id": 28,
+    "date": "2026-10-14",
+    "text": "Cleared an Amazon OA and immediately went back to basics with my DSA prep, rebuilding my approach around recognizing patterns instead of memorizing individual problems.\n\nThe shift that actually mattered wasn't a new resource or a new sheet — it was consciously stopping myself from memorizing specific solutions and instead forcing myself to name the underlying pattern a problem was dressed up as: prefix sum, sliding window, two pointers, whatever it actually was underneath the specific story. I started with prefix sum, worked through LeetCode 560 and its variants repeatedly until recognizing that pattern became automatic instead of something I had to consciously search for.\n\nPattern recognition compounds over time in a way that memorized solutions simply don't. A memorized solution helps with exactly one problem. A recognized pattern helps with an entire family of problems you haven't even seen yet."
+  },
+  {
+    "id": 29,
+    "date": "2026-10-16",
+    "text": "Solved a sliding-window percentile problem that needed more than a basic sliding window on its own — used a policy-based order statistics tree in C++ to maintain efficient rank queries as the window slides across the array.\n\nThe genuinely interesting part wasn't the data structure itself, which is fairly standard once you know it exists. It was recognizing that a \"find the running median or percentile\" problem is really an order-statistics problem wearing a sliding-window costume on top. Once you actually see the true shape of a problem underneath its surface description, the right tool to reach for becomes almost obvious — the hard part was never the implementation, it was the recognition.",
+    "images": [
+      "images/POST_29_ORDER_STATISTICS_WINDOW.png"
+    ]
+  },
+  {
+    "id": 30,
+    "date": "2026-10-18",
+    "text": "Worked through a robot navigation problem using BFS with an expanded state space — where the \"state\" being explored isn't just the robot's position, it's position combined with orientation and whatever additional context changes which moves are actually legal next.\n\nThe mistake I almost made, and I think it's a common one: modeling state as just an (x, y) coordinate pair, the way most beginner BFS problems train you to think. The moment a problem involves direction-dependent moves, or accumulated context from earlier steps that changes future legal moves, your state space genuinely needs to expand to represent that properly — otherwise BFS ends up exploring an entirely different, wrong graph than the one the problem actually describes.",
+    "images": [
+      "images/POST_30_BFS_EXPANDED_STATE.png"
+    ]
+  },
+  {
+    "id": 31,
+    "date": "2026-10-21",
+    "text": "Hit a pipeline scheduling problem: schedule jobs across multiple stations with dependencies between them, minimizing total completion time across the whole pipeline. Modeled the dependencies as a DAG to enforce correct ordering, paired with a per-station min-heap to always pick the next best available job at each individual station.\n\nTwo different structures doing two genuinely different jobs here — the DAG enforces \"what's allowed to happen when, given what depends on what,\" and the heap enforces \"of the choices currently available at this station, which one should happen first.\" Neither structure alone solves the actual problem. It's the combination, each handling the part it's actually suited for, that makes the whole thing work.",
+    "images": [
+      "images/POST_31_DAG_MINHEAP.png"
+    ]
+  },
+  {
+    "id": 32,
+    "date": "2026-10-23",
+    "text": "Six months into genuinely consistent DSA practice, the biggest shift I've noticed isn't really in which problems I'm now able to solve. It's in how quickly I can rule out an approach that's clearly wrong before wasting real time on it.\n\nKnowing what not to try saves far more time in an actual interview setting than knowing every pattern perfectly by heart ever could. And that kind of instinct only comes from raw volume of practice — there's no shortcut to it that I've found, no clever trick that replaces having simply seen enough problems to recognize a dead end quickly."
+  },
+  {
+    "id": 33,
+    "date": "2026-10-25",
+    "text": "Placement prep has taught me to sequence my own learning far more deliberately than I ever did before: DSA first, then low-level design, then core CS fundamentals, then high-level design, then the specific web development details.\n\nNot because the later topics in that list matter any less on their own merits — but because each one genuinely becomes easier to actually absorb once the one before it is solid. Sequencing your own learning is itself a real skill, and it's one that almost nobody explicitly teaches you directly. You mostly have to figure it out by getting the order wrong a few times first.\n\n---",
+    "images": [
+      "images/POST_33_LEARNING_ROADMAP.png"
+    ]
+  },
+  {
+    "id": 34,
+    "date": "2026-10-28",
+    "text": "Started building Cortex, an agentic knowledge assistant, using a planner-executor architecture combined with hybrid RAG and MCP-based retrieval, and a dual-tier memory system underneath it all.\n\nThe core design bet I made early on: deliberately separate \"deciding what to do\" — the planner — from \"actually going and doing it\" — the executor — as genuinely distinct components, rather than asking one large prompt to somehow handle both responsibilities at once. That separation gives cleaner, more legible failure modes, and it's made the whole system meaningfully easier to debug when something goes wrong, because I can usually tell right away whether the plan was bad or the execution of a good plan was bad.\n\n``",
+    "images": [
+      "images/POST_34_CORTEX_ARCHITECTURE.png"
+    ]
+  },
+  {
+    "id": 35,
+    "date": "2026-10-30",
+    "text": "Designing Cortex's memory system as dual-tier: fast, ephemeral working memory scoped to the current task, and slower, persistent long-term memory that carries real context across separate sessions over time.\n\nThis mirrors something real about how human reasoning actually seems to work — you don't hold every past interaction you've ever had in active working memory at once. You retrieve the relevant pieces only when you actually need them. I'm trying to build that same distinction directly into the architecture itself, rather than defaulting to treating memory as one flat, undifferentiated store where everything gets equal weight regardless of relevance or recency.",
+    "images": [
+      "images/POST_35_CORTEX_MEMORY.png"
+    ]
+  },
+  {
+    "id": 36,
+    "date": "2026-11-01",
+    "text": "Added provenance-gated actions to Cortex — every action the agent takes now has to be traceable back to the specific retrieval or reasoning step that actually justified taking it.\n\nThis exists because \"the agent did something that seems reasonable\" isn't a good enough bar to clear once the agent has real tool access and can genuinely affect things outside a sandbox. You need to be able to answer \"why did it do that, specifically\" after the fact, with an actual trace to point to — not just trust, after the fact, that it probably had a good reason based on vibes.",
+    "images": [
+      "images/POST_36_PROVENANCE_ACTION_GATE.png"
+    ]
+  },
+  {
+    "id": 37,
+    "date": "2026-11-04",
+    "text": "Building a retrieval evaluation harness for Cortex, because \"the RAG system feels like it's working when I test it a few times\" was never actually a real metric, no matter how convincing it felt in the moment.\n\nTesting retrieval quality systematically, with a real evaluation set and real scoring, instead of spot-checking a handful of queries and trusting my gut, is the actual difference between a demo that happens to look good once in a walkthrough and a system I can genuinely trust and keep iterating on over time without flying blind.\n\n---",
+    "images": [
+      "images/POST_37_RAG_EVALUATION.png"
+    ]
+  },
+  {
+    "id": 38,
+    "date": "2026-11-06",
+    "text": "Something I've noticed after building four fairly different systems this year — a matching engine, a workflow orchestrator, an AI agent, and now going deep on LLM internals from scratch: the actual transferable skill underneath all of it was never any specific stack or language.\n\nIt's learning to ask \"where does this fail, and what actually happens when it does\" before writing the happy path at all. Every single project above got meaningfully better the moment I started deliberately designing for failure first, instead of designing for the success case and treating failure handling as something to bolt on afterward if I had time left."
+  },
+  {
+    "id": 39,
+    "date": "2026-11-08",
+    "text": "Closing out this run of posts — from matching engines, to transactional outboxes, to agentic AI architecture, to sitting with genuinely uncomfortable questions about what AI assistance is doing to how I learn — with the one thing that's stayed constant across all of it: I'd rather deeply understand a smaller system than superficially understand a much larger one.\n\nStill pre-placement. Still building. Still learning the real gap between \"it works\" and \"I actually understand why it works\" — and I think that gap is where all the real engineering happens, not in the part that just runs."
+  }
+]
