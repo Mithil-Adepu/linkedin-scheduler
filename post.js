@@ -193,8 +193,3 @@ publishPost().catch(error => {
     console.error("ERROR:", error.message);
     process.exit(1);
 });
-
-publishPost().catch(error => {
-    console.error("ERROR:", error.message);
-    process.exit(1);
-});
