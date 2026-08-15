@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: linkedin-scheduler
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -31,10 +31,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish LinkedIn post
-        env:
-          LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
-        run: node post.js
       - name: Publish LinkedIn post
         env:
           LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
