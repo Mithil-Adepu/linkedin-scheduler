@@ -1,15 +1,18 @@
+"use strict";
 require("dotenv").config();
 
 const fs = require("fs");
 const path = require("path");
+const { execSync } = require("child_process");
 
 const TOKEN = process.env.LINKEDIN_TOKEN;
 const AUTHOR = "urn:li:person:Hkk7VGE5ak";
 const VERSION = "202607";
 
-const posts = JSON.parse(
-    fs.readFileSync("posts.json", "utf8")
-);
+const POSTS_FILE = "posts.json";
+const STATE_FILE = "last_published.json";
+
+const posts = JSON.parse(fs.readFileSync(POSTS_FILE, "utf8"));
 
 const today = new Date().toISOString().split("T")[0];
 
@@ -20,10 +23,24 @@ if (!post) {
     process.exit(0);
 }
 
+// Idempotency check: read last_published.json
+let lastPublished = null;
+if (fs.existsSync(STATE_FILE)) {
+    try {
+        lastPublished = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    } catch (err) {
+        console.warn("Could not read state file, continuing:", err.message);
+    }
+}
+
+if (lastPublished && lastPublished.date === today && lastPublished.id === post.id) {
+    console.log(`Post id=${post.id} already published for ${today}, exiting.`);
+    process.exit(0);
+}
+
 async function uploadImage(filePath) {
     console.log(`Uploading ${filePath}...`);
 
-    // 1. Initialize image upload
     const initResponse = await fetch(
         "https://api.linkedin.com/rest/images?action=initializeUpload",
         {
@@ -55,12 +72,8 @@ async function uploadImage(filePath) {
     const uploadUrl = initData.value.uploadUrl;
     const imageUrn = initData.value.image;
 
-    // 2. Read local image
-    const imageBuffer = fs.readFileSync(
-        path.resolve(filePath)
-    );
+    const imageBuffer = fs.readFileSync(path.resolve(filePath));
 
-    // 3. Upload actual image
     const uploadResponse = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
@@ -93,49 +106,36 @@ async function publishPost() {
 
     const linkedinPost = {
         author: AUTHOR,
-
         commentary: post.text,
-
         visibility: "PUBLIC",
-
         distribution: {
             feedDistribution: "MAIN_FEED",
             targetEntities: [],
             thirdPartyDistributionChannels: []
         },
-
         lifecycleState: "PUBLISHED",
-
         isReshareDisabledByAuthor: false,
-
         ...(imageUrns.length > 0
             ? {
-                content: {
-                    multiImage: {
-                        images: imageUrns.map(imageUrn => ({
-                            id: imageUrn
-                        }))
-                    }
-                }
-            }
+                  content: {
+                      multiImage: {
+                          images: imageUrns.map(imageUrn => ({ id: imageUrn }))
+                      }
+                  }
+              }
             : {})
     };
 
-    const response = await fetch(
-        "https://api.linkedin.com/rest/posts",
-        {
-            method: "POST",
-
-            headers: {
-                "Authorization": `Bearer ${TOKEN}`,
-                "Content-Type": "application/json",
-                "X-Restli-Protocol-Version": "2.0.0",
-                "Linkedin-Version": VERSION
-            },
-
-            body: JSON.stringify(linkedinPost)
-        }
-    );
+    const response = await fetch("https://api.linkedin.com/rest/posts", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${TOKEN}`,
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0",
+            "Linkedin-Version": VERSION
+        },
+        body: JSON.stringify(linkedinPost)
+    });
 
     const responseText = await response.text();
 
@@ -147,7 +147,52 @@ async function publishPost() {
     }
 
     console.log("POST PUBLISHED SUCCESSFULLY");
+
+    // Persist state: record that this post was published
+    const state = {
+        id: post.id,
+        date: today,
+        publishedAt: new Date().toISOString(),
+        response: (() => {
+            try {
+                return JSON.parse(responseText);
+            } catch {
+                return responseText;
+            }
+        })()
+    };
+
+    try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+        console.log(`Wrote state to ${STATE_FILE}`);
+
+        // Commit and push the state file so it persists for future runs.
+        try {
+            execSync('git config user.name "github-actions[bot]"');
+            execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
+            execSync(`git add ${STATE_FILE}`);
+            try {
+                execSync(`git commit -m "Record published post ${post.id} (${today})"`, { stdio: "inherit" });
+            } catch (commitErr) {
+                console.log("No changes to commit (or commit failed):", commitErr.message);
+            }
+            try {
+                execSync("git push", { stdio: "inherit" });
+            } catch (pushErr) {
+                console.warn("git push failed (state file may not be persisted):", pushErr.message);
+            }
+        } catch (gitErr) {
+            console.warn("Failed to commit state file:", gitErr.message);
+        }
+    } catch (fsErr) {
+        console.warn("Failed to write or persist state file:", fsErr.message);
+    }
 }
+
+publishPost().catch(error => {
+    console.error("ERROR:", error.message);
+    process.exit(1);
+});
 
 publishPost().catch(error => {
     console.error("ERROR:", error.message);
