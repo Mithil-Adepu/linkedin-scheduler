@@ -10,7 +10,7 @@
   },
   {
     "id": 2,
-    "date": "2026-08-14",
+    "date": "2026-08-15",
     "text": "There was a stretch, maybe two months in, where I genuinely believed I could design a frontend that matched what I was seeing on Binance or Backpack Exchange — clean, dense, information-first, built for someone making fast decisions.\n\nI sat down on my own laptop, rusty at frontend work, and tried to remake that. It didn't go how I imagined. Those interfaces are built by teams of designers and engineers with years of experience on real trading products, with actual UX research behind every pixel of density and spacing. I was one person, learning as I went, trying to close a gap that took other people entire careers to close.\n\nI don't regret trying. What I built is meaningfully better than where I started, and I'm genuinely proud of parts of it. But I want to be honest instead of polished here: it's not there yet. It still needs real improvement, and I know exactly which parts. I'd rather say that plainly than let a nice screenshot imply something the codebase doesn't back up.\n\nDreaming big and being honest about the distance between the dream and the current version aren't in conflict. I think that tension is actually the healthy version of ambition."
   },
   {
