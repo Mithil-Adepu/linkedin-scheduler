@@ -3,8 +3,14 @@ name: LinkedIn Scheduler
 on:
   schedule:
     - cron: "30 13 * * *"
-
   workflow_dispatch:
+
+concurrency:
+  group: linkedin-scheduler
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   post:
@@ -13,6 +19,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -22,6 +31,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Publish LinkedIn post
+        env:
+          LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
+        run: node post.js
       - name: Publish LinkedIn post
         env:
           LINKEDIN_TOKEN: ${{ secrets.LINKEDIN_TOKEN }}
