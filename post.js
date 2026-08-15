@@ -81,9 +81,10 @@ async function uploadImage(filePath) {
 }
 
 async function publishPost() {
+    const postImages = Array.isArray(post.images) ? post.images : [];
     const imageUrns = [];
 
-    for (const image of post.images) {
+    for (const image of postImages) {
         const imageUrn = await uploadImage(image);
         imageUrns.push(imageUrn);
     }
@@ -107,13 +108,17 @@ async function publishPost() {
 
         isReshareDisabledByAuthor: false,
 
-        content: {
-            multiImage: {
-                images: imageUrns.map(imageUrn => ({
-                    id: imageUrn
-                }))
+        ...(imageUrns.length > 0
+            ? {
+                content: {
+                    multiImage: {
+                        images: imageUrns.map(imageUrn => ({
+                            id: imageUrn
+                        }))
+                    }
+                }
             }
-        }
+            : {})
     };
 
     const response = await fetch(
